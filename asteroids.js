@@ -1,4 +1,4 @@
-const globals = {
+const global = {
     screenWidth: 100,
     screenHeight: 100,
     frameTime: 0,
@@ -7,7 +7,6 @@ const globals = {
     ships: 3,
     level: 1
 };
-
 const ship = {
     x: 200,
     y: 200,
@@ -20,10 +19,8 @@ const ship = {
     shoot: false,
     shootWait: 0
 };
-
 const bullets = [];
 const rocks = [];
-/////////
 const particles = [];
 const messages = [];
 
@@ -33,7 +30,7 @@ function moveMessage(message) {
         message.remove = true;
         return;
     }
-    const {width, height} = globals;
+    const {width, height} = global;
     message.x += message.dx;
     message.y += message.dy;
     if (message.x > width) {
@@ -72,14 +69,13 @@ function drawMessages(ctx) {
     }
 }
 
-
 function moveParticle(particle) {
     particle.life--;
     if (particle.life <= 0) {
         particle.remove = true;
         return;
     }
-    const {width, height} = globals;
+    const {width, height} = global;
     particle.x += particle.dx;
     particle.y += particle.dy;
     if (particle.x > width) {
@@ -120,13 +116,10 @@ function drawParticles(ctx) {
     }
 }
 
-
 function speed(dx, dy) {
     return Math.sqrt(dx*dx + dy*dy);
 }
-
 const degToRad = Math.PI / 180;
-
 
 function shipCollision() {
     for (const r of rocks) {
@@ -138,9 +131,9 @@ function shipCollision() {
 }
 
 function hitShip() {
-    globals.ships--;
+    global.ships--;
     explosion(ship.x, ship.y);
-    if (globals.ships == 0) {
+    if (global.ships == 0) {
         ship.remove = true;
             messages.push({
                 text: "Game Over :-(",
@@ -156,8 +149,8 @@ function hitShip() {
     ship.dx = 0;
     ship.dy = 0;
     while(shipCollision()) {
-        ship.x = Math.random() * globals.width;
-        ship.y = Math.random() * globals.height;
+        ship.x = Math.random() * global.width;
+        ship.y = Math.random() * global.height;
     }
 }
 
@@ -173,11 +166,8 @@ function addThrustParticle() {
     const thrustAngle = 180 + ship.angle + (Math.random()-0.5) * 15;
     const ox =  cos(thrustAngle) * 5
     const oy = -sin(thrustAngle) * 5;
-
     const dx = ship.dx + ox;
     const dy = ship.dy + oy;
-
-
     particles.push({x: ship.x,
                     y: ship.y,
                     dx,
@@ -189,9 +179,13 @@ function addThrustParticle() {
 }
 
 function explosion(x, y) {
-    for (let angle = 0; angle < 360; angle+=5) {
+    if (global.frameTime > 16) {
+        return;
+    }
+    const angleIncrement = 5 + global.frameTime;
+    for (let angle = 0; angle < 360; angle += angleIncrement) {
         const r = Math.random()*20;
-         const ox =  cos(angle) * r
+        const ox =  cos(angle) * r
         const oy = -sin(angle) * r;
             particles.push({x,
                     y,
@@ -204,24 +198,21 @@ function explosion(x, y) {
     }
 }
 
-
 function moveShip() {
     if (ship.remove) {
         return;
     }
-    const {width, height} = globals;
+    const {width, height} = global;
     if (shipCollision()) {
             hitShip();
         return;
     }
-
     ship.angle += ship.dAngle;
     if (ship.angle < 0) {
         ship.angle += 360;
     } else if (ship.angle > 360) {
         ship.angle -= 360;
     }
-
     if (ship.thrust) {
         const newdx = ship.dx + cos(ship.angle) * 0.25;
         const newdy = ship.dy - sin(ship.angle) * 0.25;
@@ -249,11 +240,10 @@ function hitRock(rock) {
     rock.remove = true;
     explosion(rock.x, rock.y);
     const newRockSize = rock.size / 2;
-    if (newRockSize < globals.smallestRock) return;
+    if (newRockSize < global.smallestRock) return;
     for(let i = 0; i< 3; i++){
         addRock(newRockSize, rock.x, rock.y);
     }
-
 }
 
 function moveBullet(bullet) {
@@ -262,7 +252,7 @@ function moveBullet(bullet) {
         bullet.remove = true;
         return;
     }
-    const {width, height} = globals;
+    const {width, height} = global;
     bullet.x += bullet.dx;
     bullet.y += bullet.dy;
     if (bullet.x > width) {
@@ -287,20 +277,15 @@ function inside(bullet, coords) {
     if (coords == null) return;
     // ray-casting algorithm based on
     // https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html/pnpoly.html
-
     const {x, y} = bullet;
-
     let inside = false;
-
     for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
         let xi = coords[i].x, yi = coords[i].y;
         let xj = coords[j].x, yj = coords[j].y;
-
         let intersect = ((yi > y) != (yj > y))
             && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
         if (intersect) inside = !inside;
     }
-
     return inside;
 };
 
@@ -313,8 +298,9 @@ function moveBullets() {
         }
     }
 }
+
 function addRock(size, x, y) {
-    const {width, height} = globals;
+    const {width, height} = global;
     const noPoints = 18;
     const points = [];
     const halfSize = Math.floor(size / 2);
@@ -329,17 +315,16 @@ function addRock(size, x, y) {
     y = y == null ? Math.random() * height : y;
     const dx = 2 * (Math.random() - 0.5);
     const dy = 2 * (Math.random() - 0.5);
-    const dAngle = 0.1 * (Math.random() - 0.5);
+    const dAngle = (Math.random() - 0.5) / 4;
     const h = Math.random() * 360;
     const fillStyle =  `hsl(${h},100%,50%)`;
     const rock = {points, x, y, dAngle, angle: 0, dx, dy, fillStyle, size};
     moveRock(rock);
     rocks.push(rock);
-
 }
 
 function moveRock(rock) {
-    const {width, height} = globals;
+    const {width, height} = global;
     rock.angle += rock.dAngle;
     rock.x += rock.dx;
     rock.y += rock.dy;
@@ -354,14 +339,14 @@ function moveRock(rock) {
         rock.y += height;
     }
     // need to convert to cartesian
-
     rock.coords = rock.points.map(({r, theta}) => {
         theta += rock.angle
-        const x = rock.x + Math.cos(theta) * r;
-        const y = rock.y - Math.sin(theta) * r;
+        const x = rock.x + cos(theta) * r;
+        const y = rock.y - sin(theta) * r;
         return {x, y};
     });
 }
+
 function moveRocks() {
     for (let i = rocks.length - 1; i >= 0; i--) {
         const rock = rocks[i];
@@ -379,25 +364,44 @@ function drawRocks(ctx) {
     rocks.forEach(r => drawRock(r, ctx));
 }
 
-
 function drawRock(rock, ctx) {
     // rock is a bunch of polar coordinates
+    const {width, height} = global;
     const {coords, angle, fillStyle} = rock;
-    ctx.beginPath();
+    let repeatRight = false;
+    let repeatLeft = false;
+    let repeatBottom = false;
+    let repeatTop = false;
     for (let i = 0; i < coords.length; i++) {
         let {x, y} = coords[i];
+        if (x < 0) repeatRight = true;
+        else if (x > width) repeatLeft = true;
+        if (y < 0) repeatBottom = true;
+        else if (y> height) repeatTop = true;
+    }
+    const oxs = [0];
+    const oys = [0];
+    if (repeatRight) oxs.push(width);
+    if (repeatLeft) oxs.push(-width);
+    if (repeatTop) oys.push(-height);
+    if (repeatBottom) oys.push(height);
+    for (let ox of oxs) {
+        for (let oy of oys) {
+            ctx.beginPath();
+            for (let i = 0; i < coords.length; i++) {
+        let {x, y} = coords[i];
         if (i == 0) {
-            ctx.moveTo(x, y);
+            ctx.moveTo(x + ox, y + oy);
         } else {
-            ctx.lineTo(x, y);
+            ctx.lineTo(x + ox, y + oy);
         }
     }
-    ctx.lineTo(coords[0].x, coords[0].y);
+    ctx.lineTo(coords[0].x + ox, coords[0].y + oy);
     ctx.fillStyle = fillStyle;
     ctx.fill();
-
+    }
+    }
 }
-
 
 function drawShip(ctx) {
     if (ship.remove) {
@@ -407,18 +411,13 @@ function drawShip(ctx) {
            y,
            angle,
            thrust} = ship;
-
     const radius = 30;
-
     const noseX = x + cos(angle) * radius;
     const noseY = y - sin(angle) * radius;
-
     const bX = x + cos(angle + 135) * radius;
     const bY = y - sin(angle + 135) * radius;
-
     const cX = x + cos(angle + 225) * radius;
     const cY = y - sin(angle + 225) * radius;
-
     ctx.beginPath();
     ctx.moveTo(noseX, noseY);
     ctx.lineTo(bX, bY);
@@ -426,6 +425,7 @@ function drawShip(ctx) {
     ctx.fillStyle = "#77aaff";
     ctx.fill();
 }
+
 function drawBullet(bullet, ctx) {
     ctx.lineWidth = 3;
     ctx.strokeStyle = `rgb(255,${bullet.life},0)`;
@@ -433,8 +433,8 @@ function drawBullet(bullet, ctx) {
     ctx.moveTo(bullet.x, bullet.y);
     ctx.lineTo(bullet.x + bullet.ox, bullet.y + bullet.oy);
     ctx.stroke();
-
 }
+
 function drawBullets(ctx) {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const bullet = bullets[i];
@@ -442,9 +442,8 @@ function drawBullets(ctx) {
     }
 }
 
-
 function drawBackground(ctx) {
-    const {width, height} = globals;
+    const {width, height} = global;
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, width, height);
 }
@@ -452,26 +451,21 @@ function drawBackground(ctx) {
 function drawForeground(ctx) {
     ctx.fillStyle = "#ffffff";
     ctx.font = '10px serif';
-    ctx.fillText(globals.frameTime, 10, 30);
+    ctx.fillText(global.frameTime, 10, 30);
     ctx.font = '50px serif';
-    ctx.fillText(globals.ships, globals.width - 200, 60);
+    ctx.fillText(global.ships, global.width - 200, 60);
 }
 
 function main() {
     const t0 = performance.now();
-
-    const {canvas, bufferCanvas, width, height, screenWidth, screenHeight} = globals;
-
-
+    const {canvas, bufferCanvas, width, height, screenWidth, screenHeight} = global;
     const ctx = bufferCanvas.getContext('2d');
-
     shoot();
     moveShip();
     moveBullets();
     moveRocks();
     moveParticles();
     moveMessages(ctx);
-
     drawBackground(ctx);
     drawBullets(ctx);
     drawParticles(ctx);
@@ -479,18 +473,16 @@ function main() {
     drawRocks(ctx);
     drawMessages(ctx);
     drawForeground(ctx);
-
     //render the buffered canvas onto the original canvas element
     canvas.getContext('2d').drawImage(bufferCanvas, 0, 0, screenWidth, screenHeight);
-
     const t1 = performance.now();
-    globals.frameTime = t1 - t0;
+    global.frameTime = t1 - t0;
 }
 
 function shoot() {
     ship.shootWait = Math.max(ship.shootWait - 1, 0);
-    if (!ship.shoot || ship.shootWait > 0) return;
-    ship.shootWait = 15;
+    if (ship.remove || !ship.shoot || ship.shootWait > 0) return;
+    ship.shootWait = 5;
     const ox =  cos(ship.angle) * 6;
     const oy =  -sin(ship.angle) * 6;
     const bullet = {
@@ -511,13 +503,10 @@ function keyDown(e) {
         ship.dAngle = 6; break;
     case 39: // right
         ship.dAngle = -6; break;
-
     case 38: // up
         ship.thrust = true;  break;
-
     case 32: // space
         ship.shoot = true;  break;
-
     }
 }
 
@@ -527,60 +516,57 @@ function keyUp(e) {
         ship.dAngle =0 ; break;
     case 39: //right
         ship.dAngle =0 ; break;
-
     case 38: //right
         ship.thrust = false;  break;
-
     case 32: // space
         ship.shoot = false;  break;
-
     }
 }
 
-
 function nextLevel() {
-    globals.level++;
-    globals.smallestRock = Math.max(100 - globals.level * 10, 10);
+    global.level++;
+    global.smallestRock = Math.max(100 - global.level * 10, 10);
         messages.push({
-        text: "Level "+globals.level,
+        text: "Level "+global.level,
         x:500,
                   y:500,
                   dx:0,
                   dy:-1,
                   font: '100px serif',
                   life: 100});
-    for(let i = 0; i< globals.level; i++){
-        addRock(100 * globals.level);
+    for(let i = 0; i< global.level; i++){
+        addRock(100 * global.level, 0, 0);
     }
     while(shipCollision()) {
-        ship.x = Math.random() * globals.width;
-        ship.y = Math.random() * globals.height;
+        ship.x = Math.random() * global.width;
+        ship.y = Math.random() * global.height;
     }
 }
 
 function initAsteroids() {
-    globals.smallestRock = 100;
+    global.smallestRock = 100;
+    ship.x = global.width / 2;
+    ship.y = global.height / 2;
     document.addEventListener('keydown', keyDown);
     document.addEventListener('keyup', keyUp);
-    globals.canvas = document.getElementById('canvas');
-    globals.body = document.querySelector("body")
-    globals.bufferCanvas = document.createElement('canvas');
+    global.canvas = document.getElementById('canvas');
+    global.body = document.querySelector("body")
+    global.bufferCanvas = document.createElement('canvas');
     resize();
-    globals.level=0;
+    global.level = 0;
     nextLevel();
     setInterval(main, 17);
 }
 
-window.onload = initAsteroids;
-
 const resize = function() {
-    const {body, canvas, bufferCanvas} = globals;
-    globals.screenWidth = body.clientWidth;
-    globals.screenHeight = body.clientHeight;
-    canvas.width = globals.screenWidth;
-    canvas.height = globals.screenHeight;
-    bufferCanvas.width = globals.width;
-    bufferCanvas.height = globals.height;
+    const {body, canvas, bufferCanvas} = global;
+    global.screenWidth = body.clientWidth;
+    global.screenHeight = body.clientHeight;
+    canvas.width = global.screenWidth;
+    canvas.height = global.screenHeight;
+    bufferCanvas.width = global.width;
+    bufferCanvas.height = global.height;
 };
 
 window.onresize = resize;
+window.onload = initAsteroids;
