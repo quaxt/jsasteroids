@@ -4,9 +4,26 @@ const global = {
     frameTime: 0,
     width: 1920,
     height: 1080,
-    ships: 3,
-    level: 1
+    ships: 5,
+    level: 1,
+    smartBombs: 0
 };
+
+function initAsteroids() {
+    global.smallestRock = 100;
+    ship.x = global.width / 2;
+    ship.y = global.height / 2;
+    document.addEventListener('keydown', keyDown);
+    document.addEventListener('keyup', keyUp);
+    global.canvas = document.getElementById('canvas');
+    global.body = document.querySelector("body")
+    global.bufferCanvas = document.createElement('canvas');
+    resize();
+    global.level = 0;
+    nextLevel();
+    setInterval(main, 17);
+}
+
 const ship = {
     x: 200,
     y: 200,
@@ -130,9 +147,15 @@ function shipCollision() {
     return false;
 }
 
+function distance(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
 function hitShip() {
     global.ships--;
-    explosion(ship.x, ship.y);
+    explosion(ship.x, ship.y, 30);
     if (global.ships == 0) {
         ship.remove = true;
             messages.push({
@@ -144,13 +167,25 @@ function hitShip() {
                   font: '100px serif',
                   life: 200});
     }
-    ship.x = 100;
-    ship.y = 100;
+
+
     ship.dx = 0;
     ship.dy = 0;
     while(shipCollision()) {
         ship.x = Math.random() * global.width;
         ship.y = Math.random() * global.height;
+    }
+
+    for(let r of rocks) {
+        if (distance(r, ship) < 1000) {
+            r.dx = r.x - ship.x
+            r.dy = r.y - ship.y
+            const s = speed(r.dx, r.dy);
+            if (s > 1) {
+                r.dx /= s;
+                r.dy /= s;
+            }
+        }
     }
 }
 
@@ -178,7 +213,7 @@ function addThrustParticle() {
                     life: 100});
 }
 
-function explosion(x, y) {
+function explosion(x, y, size) {
     if (global.frameTime > 16) {
         return;
     }
@@ -194,7 +229,7 @@ function explosion(x, y) {
                     ox,
                     oy,
                     angle,
-                    life: 30});
+                    life: size});
     }
 }
 
@@ -238,9 +273,9 @@ function moveShip() {
 
 function hitRock(rock) {
     rock.remove = true;
-    explosion(rock.x, rock.y);
+    explosion(rock.x, rock.y, rock.size/10);
     const newRockSize = rock.size / 2;
-    if (newRockSize < global.smallestRock) return;
+    if (newRockSize < global.smallestRock || rocks.length > 500) return;
     for(let i = 0; i< 3; i++){
         addRock(newRockSize, rock.x, rock.y);
     }
@@ -265,12 +300,14 @@ function moveBullet(bullet) {
     } else if (bullet.y < 0){
         bullet.y += height;
     }
-    rocks.forEach(r => {
+    for(let i = 0; i < rocks.length; i++) {
+        const r = rocks[i];
         if (inside(bullet, r.coords)) {
             hitRock(r);
             bullet.remove = true;
+            break;
         }
-    })
+    }
 }
 
 function inside(bullet, coords) {
@@ -357,6 +394,8 @@ function moveRocks() {
     }
     if (rocks.length == 0) {
         nextLevel();
+    } else if (rocks.length > 10000) {
+        rocks.splice(10000)
     }
 }
 
@@ -444,7 +483,7 @@ function drawBullets(ctx) {
 
 function drawBackground(ctx) {
     const {width, height} = global;
-    ctx.fillStyle = "#000000";
+    ctx.fillStyle = "#001122";
     ctx.fillRect(0, 0, width, height);
 }
 
@@ -453,7 +492,8 @@ function drawForeground(ctx) {
     ctx.font = '10px serif';
     ctx.fillText(global.frameTime, 10, 30);
     ctx.font = '50px serif';
-    ctx.fillText(global.ships, global.width - 200, 60);
+    ctx.fillText(global.ships, global.width - 500, 60);
+    ctx.fillText("ZZZZZZZZZZ".substring(0, global.smartBombs), global.width - 200, 60);
 }
 
 function main() {
@@ -479,10 +519,35 @@ function main() {
     global.frameTime = t1 - t0;
 }
 
+function smartBomb() {
+    if (ship.remove || ship.shootWait > 0 || global.smartBombs <=0 ) return;
+    ship.shootWait = Math.max(ship.shootWait - 1, 0);
+    ship.shootWait = 30;
+    if (bullets.length > 5000) {
+        return;
+    }
+    global.smartBombs--;
+    for (let angle = 0; angle < 360; angle += 4){
+        const ox =  cos(angle) * 3;
+        const oy =  -sin(angle) * 3;
+        const bullet = {
+            ox: ox,
+            oy: oy,
+            x: ship.x + ox,
+            y: ship.y + oy,
+            dx: ship.dx + ox,
+            dy: ship.dy + oy,
+            life: 255 // bullet lasts 90 frames
+        }
+        bullets.push(bullet);
+    }
+
+}
+
 function shoot() {
     ship.shootWait = Math.max(ship.shootWait - 1, 0);
     if (ship.remove || !ship.shoot || ship.shootWait > 0) return;
-    ship.shootWait = 5;
+    ship.shootWait = 10;
     const ox =  cos(ship.angle) * 6;
     const oy =  -sin(ship.angle) * 6;
     const bullet = {
@@ -492,12 +557,13 @@ function shoot() {
         y: ship.y + oy,
         dx: ship.dx + ox,
         dy: ship.dy + oy,
-        life: 255 // bullet lasts 90 frames
+        life: 90 // bullet lasts 90 frames
     }
     bullets.push(bullet);
 }
 
 function keyDown(e) {
+    console.log(e.keyCode);
     switch (e.keyCode) {
     case 37: // left
         ship.dAngle = 6; break;
@@ -507,6 +573,8 @@ function keyDown(e) {
         ship.thrust = true;  break;
     case 32: // space
         ship.shoot = true;  break;
+    case 90: // space
+        smartBomb();  break;
     }
 }
 
@@ -525,7 +593,9 @@ function keyUp(e) {
 
 function nextLevel() {
     global.level++;
-    global.smallestRock = Math.max(100 - global.level * 10, 10);
+    global.smartBombs++;
+    bullets.splice(0);
+    global.smallestRock = Math.max(100 - global.level * 10, 50);
         messages.push({
         text: "Level "+global.level,
         x:500,
@@ -534,7 +604,7 @@ function nextLevel() {
                   dy:-1,
                   font: '100px serif',
                   life: 100});
-    for(let i = 0; i< global.level; i++){
+    for(let i = 0; i< Math.min(global.level, 5); i++){
         addRock(100 * global.level, 0, 0);
     }
     while(shipCollision()) {
@@ -543,20 +613,7 @@ function nextLevel() {
     }
 }
 
-function initAsteroids() {
-    global.smallestRock = 100;
-    ship.x = global.width / 2;
-    ship.y = global.height / 2;
-    document.addEventListener('keydown', keyDown);
-    document.addEventListener('keyup', keyUp);
-    global.canvas = document.getElementById('canvas');
-    global.body = document.querySelector("body")
-    global.bufferCanvas = document.createElement('canvas');
-    resize();
-    global.level = 0;
-    nextLevel();
-    setInterval(main, 17);
-}
+
 
 const resize = function() {
     const {body, canvas, bufferCanvas} = global;
