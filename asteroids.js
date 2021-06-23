@@ -9,12 +9,18 @@ const global = {
     smartBombs: 0
 };
 
+function click(e) {
+    console.log(e);
+    
+}
+
 function initAsteroids() {
     global.smallestRock = 100;
     ship.x = global.width / 2;
     ship.y = global.height / 2;
     document.addEventListener('keydown', keyDown);
     document.addEventListener('keyup', keyUp);
+    document.addEventListener('click', click);
     global.canvas = document.getElementById('canvas');
     global.body = document.querySelector("body")
     global.bufferCanvas = document.createElement('canvas');
@@ -38,8 +44,118 @@ const ship = {
 };
 const bullets = [];
 const rocks = [];
+const enemies = []
 const particles = [];
 const messages = [];
+
+
+function addEnemy(x, y) {
+    const {width, height} = global;
+    const size = 100;
+    const noPoints = 18;
+    const points = [];
+    const halfSize = Math.floor(size / 2);
+    const anglePerPoint = 360 / 18;
+    for(let i = 0; i < noPoints; i++) {
+        points.push({
+            r: halfSize + Math.random() * halfSize,
+            theta: i * anglePerPoint
+        })
+    }
+    x = x == null ? Math.random() * width : x;
+    y = y == null ? Math.random() * height : y;
+    const dx = 2 * (Math.random() - 0.5);
+    const dy = 2 * (Math.random() - 0.5);
+    const dAngle = (Math.random() - 0.5) / 4;
+    const h = Math.random() * 360;
+    const fillStyle =  `hsl(${h},100%,50%)`;
+    const enemy = {points, x, y, dAngle, angle: 0, dx, dy, fillStyle, size};
+    moveEnemy(enemy);
+    enemies.push(enemy);
+}
+
+function moveEnemy(enemy) {
+    const {width, height} = global;
+    enemy.angle += enemy.dAngle;
+    enemy.x += enemy.dx;
+    enemy.y += enemy.dy;
+    if (enemy.x > width) {
+        enemy.x -= width;
+    } else if (enemy.x < 0){
+        enemy.x += width;
+    }
+    if (enemy.y > height) {
+        enemy.y -= height;
+    } else if (enemy.y < 0){
+        enemy.y += height;
+    }
+    // need to convert to cartesian
+    enemy.coords = enemy.points.map(({r, theta}) => {
+        theta += enemy.angle
+        const x = enemy.x + cos(theta) * r;
+        const y = enemy.y - sin(theta) * r;
+        return {x, y};
+    });
+}
+
+function moveEnemies() {
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        moveEnemy(enemy);
+        if (enemy.remove) {
+            enemies.splice(i, 1);
+        }
+    }
+    if (enemies.length == 0) {
+        nextLevel();
+    } else if (enemies.length > 10000) {
+        enemies.splice(10000)
+    }
+}
+
+function drawEnemies(ctx) {
+    enemies.forEach(r => drawEnemy(r, ctx));
+}
+
+function drawEnemy(enemy, ctx) {
+    // enemy is a bunch of polar coordinates
+    const {width, height} = global;
+    const {coords, angle, fillStyle} = enemy;
+    let repeatRight = false;
+    let repeatLeft = false;
+    let repeatBottom = false;
+    let repeatTop = false;
+    for (let i = 0; i < coords.length; i++) {
+        let {x, y} = coords[i];
+        if (x < 0) repeatRight = true;
+        else if (x > width) repeatLeft = true;
+        if (y < 0) repeatBottom = true;
+        else if (y> height) repeatTop = true;
+    }
+    const oxs = [0];
+    const oys = [0];
+    if (repeatRight) oxs.push(width);
+    if (repeatLeft) oxs.push(-width);
+    if (repeatTop) oys.push(-height);
+    if (repeatBottom) oys.push(height);
+    for (let ox of oxs) {
+        for (let oy of oys) {
+            ctx.beginPath();
+            for (let i = 0; i < coords.length; i++) {
+        let {x, y} = coords[i];
+        if (i == 0) {
+            ctx.moveTo(x + ox, y + oy);
+        } else {
+            ctx.lineTo(x + ox, y + oy);
+        }
+    }
+    ctx.lineTo(coords[0].x + ox, coords[0].y + oy);
+    ctx.fillStyle = fillStyle;
+    ctx.fill();
+    }
+    }
+}
+
 
 function moveMessage(message) {
     message.life--;
@@ -511,6 +627,7 @@ function main() {
     drawParticles(ctx);
     drawShip(ctx);
     drawRocks(ctx);
+    drawEnemies(ctx);
     drawMessages(ctx);
     drawForeground(ctx);
     //render the buffered canvas onto the original canvas element
@@ -607,6 +724,7 @@ function nextLevel() {
     for(let i = 0; i< Math.min(global.level, 5); i++){
         addRock(100 * global.level, 0, 0);
     }
+    addEnemy(500, 500);
     while(shipCollision()) {
         ship.x = Math.random() * global.width;
         ship.y = Math.random() * global.height;
