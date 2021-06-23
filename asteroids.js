@@ -6,13 +6,10 @@ const global = {
     height: 1080,
     ships: 5,
     level: 1,
-    smartBombs: 0
+    smartBombs: 0,
+    enemyFrequency: 360,
+    maxEnemies: 20
 };
-
-function click(e) {
-    console.log(e);
-    
-}
 
 function initAsteroids() {
     global.smallestRock = 100;
@@ -20,7 +17,6 @@ function initAsteroids() {
     ship.y = global.height / 2;
     document.addEventListener('keydown', keyDown);
     document.addEventListener('keyup', keyUp);
-    document.addEventListener('click', click);
     global.canvas = document.getElementById('canvas');
     global.body = document.querySelector("body")
     global.bufferCanvas = document.createElement('canvas');
@@ -40,7 +36,8 @@ const ship = {
     dAngle: 0,
     maxSpeed: 10,
     shoot: false,
-    shootWait: 0
+    shootWait: 0,
+    invulnerability: 0
 };
 const bullets = [];
 const rocks = [];
@@ -48,35 +45,60 @@ const enemies = []
 const particles = [];
 const messages = [];
 
-
-function addEnemy(x, y) {
-    const {width, height} = global;
-    const size = 100;
-    const noPoints = 18;
-    const points = [];
-    const halfSize = Math.floor(size / 2);
-    const anglePerPoint = 360 / 18;
-    for(let i = 0; i < noPoints; i++) {
-        points.push({
-            r: halfSize + Math.random() * halfSize,
-            theta: i * anglePerPoint
-        })
+function coordsToPoints(cx, cy, coords) {
+    return coords.map(({x, y}) => {
+        const nx = x - cx;
+        const ny = cy - y;
+        const r = Math.sqrt(nx * nx + ny * ny);
+        const theta = Math.atan2(ny, nx)*180/Math.PI
+        return {r, theta}
+    })
+}
+function addEnemy() {
+    if (enemies.length >= Math.min(global.level, global.maxEnemies)) {
+        return;
     }
-    x = x == null ? Math.random() * width : x;
-    y = y == null ? Math.random() * height : y;
-    const dx = 2 * (Math.random() - 0.5);
-    const dy = 2 * (Math.random() - 0.5);
-    const dAngle = (Math.random() - 0.5) / 4;
+    const x = global.width * Math.random();
+    const y = 0;
+    const points = [
+    {r: 39.59797974644666, theta: -225},
+    {r: 39.59797974644666, theta: 45},
+    {r: 5.656854249492381, theta: 45},
+    {r: 52.15361924162119, theta: 4.3987053549955135},
+    {r: 52.15361924162119, theta: -4.3987053549955135},
+    {r: 5.656854249492381, theta: -45},
+    {r: 39.59797974644666, theta: -45},
+    {r: 39.59797974644666, theta: -135},
+    {r: 5.656854249492381, theta: -135},
+        {r: 5.656854249492381, theta: -225},
+        {r: 39.59797974644666, theta: -225}];
+    const dx = 0;
+    const dy = 0;
+    const dAngle = 0;
     const h = Math.random() * 360;
     const fillStyle =  `hsl(${h},100%,50%)`;
-    const enemy = {points, x, y, dAngle, angle: 0, dx, dy, fillStyle, size};
+    const maxSpeed = 2;
+    const enemy = {points, x, y, dAngle, angle: 0, dx, dy, fillStyle, maxSpeed};
     moveEnemy(enemy);
     enemies.push(enemy);
+}
+
+function polarToCartesian(x, y, angle, points) {
+    return points.map(({r, theta}) => {
+        theta += angle
+        return {x: x + cos(theta) * r, y: y - sin(theta) * r};
+    });
 }
 
 function moveEnemy(enemy) {
     const {width, height} = global;
     enemy.angle += enemy.dAngle;
+        if (enemy.angle < 0) {
+        enemy.angle += 360;
+    } else if (enemy.angle > 360) {
+        enemy.angle -= 360;
+    }
+
     enemy.x += enemy.dx;
     enemy.y += enemy.dy;
     if (enemy.x > width) {
@@ -89,13 +111,60 @@ function moveEnemy(enemy) {
     } else if (enemy.y < 0){
         enemy.y += height;
     }
-    // need to convert to cartesian
-    enemy.coords = enemy.points.map(({r, theta}) => {
-        theta += enemy.angle
-        const x = enemy.x + cos(theta) * r;
-        const y = enemy.y - sin(theta) * r;
-        return {x, y};
-    });
+    if (!ship.remove && Math.random()<0.01) {
+        enemyShoot(enemy);
+    }
+
+    const newdx = enemy.dx + cos(enemy.angle) * 0.25;
+    const newdy = enemy.dy - sin(enemy.angle) * 0.25;
+
+    if (speed(newdx, newdy) <= enemy.maxSpeed) {
+        enemy.dx = newdx;
+        enemy.dy = newdy;
+    }
+
+    enemy.x += enemy.dx;
+    enemy.y += enemy.dy;
+
+    enemy.coords = polarToCartesian(enemy.x, enemy.y, enemy.angle, enemy.points);
+    controlEnemy(enemy);
+}
+
+function diff(a, b) {
+    return Math.abs(a - b);
+}
+
+
+/** thrust or turn so as to get near player ship */
+function controlEnemy(enemy) {
+    if (!ship.remove) {
+        const cx = enemy.x;
+        const cy = enemy.y;
+        const x = ship.x -cx;
+        const y = cy - ship.y;
+        const r = Math.sqrt(x * x + y * y);
+        let theta = Math.atan2(y, x)*180/Math.PI;
+        /// theta is where we want to point
+        /// angle is where we are pointing
+        // naively if theta > angle then dAngle should be positive
+        // but because we're dealing with turns we need to make sure we
+        // don't go the long way around
+        let angle = enemy.angle;
+        let dAngle = 0;
+        if (theta < 0) {
+            theta += 360;
+        }
+        if(diff(theta, angle) > 180) {
+            if (angle < theta) {
+                angle+=360;
+            } else {
+                theta+=360;
+            }
+        }
+        enemy.dAngle = (!ship.remove) ? Math.sign(theta - angle) * 6 : 0
+    } else {
+        enemy.dAngle = 0;
+    }
 }
 
 function moveEnemies() {
@@ -106,11 +175,6 @@ function moveEnemies() {
             enemies.splice(i, 1);
         }
     }
-    if (enemies.length == 0) {
-        nextLevel();
-    } else if (enemies.length > 10000) {
-        enemies.splice(10000)
-    }
 }
 
 function drawEnemies(ctx) {
@@ -118,42 +182,24 @@ function drawEnemies(ctx) {
 }
 
 function drawEnemy(enemy, ctx) {
-    // enemy is a bunch of polar coordinates
     const {width, height} = global;
     const {coords, angle, fillStyle} = enemy;
-    let repeatRight = false;
-    let repeatLeft = false;
-    let repeatBottom = false;
-    let repeatTop = false;
+    ctx.beginPath();
     for (let i = 0; i < coords.length; i++) {
         let {x, y} = coords[i];
-        if (x < 0) repeatRight = true;
-        else if (x > width) repeatLeft = true;
-        if (y < 0) repeatBottom = true;
-        else if (y> height) repeatTop = true;
-    }
-    const oxs = [0];
-    const oys = [0];
-    if (repeatRight) oxs.push(width);
-    if (repeatLeft) oxs.push(-width);
-    if (repeatTop) oys.push(-height);
-    if (repeatBottom) oys.push(height);
-    for (let ox of oxs) {
-        for (let oy of oys) {
-            ctx.beginPath();
-            for (let i = 0; i < coords.length; i++) {
-        let {x, y} = coords[i];
         if (i == 0) {
-            ctx.moveTo(x + ox, y + oy);
+            ctx.moveTo(x, y);
         } else {
-            ctx.lineTo(x + ox, y + oy);
+            ctx.lineTo(x, y);
         }
     }
-    ctx.lineTo(coords[0].x + ox, coords[0].y + oy);
     ctx.fillStyle = fillStyle;
     ctx.fill();
-    }
-    }
+    let {x, y} = enemy;
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, 2 * Math.PI, false);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
 }
 
 
@@ -255,6 +301,9 @@ function speed(dx, dy) {
 const degToRad = Math.PI / 180;
 
 function shipCollision() {
+    if (ship.invulnerability) {
+        return false;
+    }
     for (const r of rocks) {
         if (inside(ship, r.coords)) {
             return true;
@@ -270,6 +319,9 @@ function distance(a, b) {
 }
 
 function hitShip() {
+    if(ship.remove || ship.invulnerability) {
+        return;
+    }
     global.ships--;
     explosion(ship.x, ship.y, 30);
     if (global.ships == 0) {
@@ -282,6 +334,8 @@ function hitShip() {
                   dy:0.5,
                   font: '100px serif',
                   life: 200});
+    } else {
+        ship.invulnerability = 300;
     }
 
 
@@ -353,6 +407,9 @@ function moveShip() {
     if (ship.remove) {
         return;
     }
+    if (ship.invulnerability > 0) {
+        ship.invulnerability--;
+    }
     const {width, height} = global;
     if (shipCollision()) {
             hitShip();
@@ -385,6 +442,13 @@ function moveShip() {
     } else if (ship.y < 0){
         ship.y += height;
     }
+    const radius = 30;
+    const {x, y, angle} = ship;
+    ship.coords = [
+        {x: x + cos(angle) * radius, y: y - sin(angle) * radius},
+        {x: x + cos(angle + 135) * radius, y: y - sin(angle + 135) * radius},
+        {x: x + cos(angle + 225) * radius, y: y - sin(angle + 225) * radius},
+    ];
 }
 
 function hitRock(rock) {
@@ -397,34 +461,67 @@ function hitRock(rock) {
     }
 }
 
-function moveBullet(bullet) {
-    bullet.life--;
-    if (bullet.life <= 0) {
-        bullet.remove = true;
+function moveBullet() {
+    this.life--;
+    if (this.life <= 0) {
+        this.remove = true;
         return;
     }
     const {width, height} = global;
-    bullet.x += bullet.dx;
-    bullet.y += bullet.dy;
-    if (bullet.x > width) {
-        bullet.x -= width;
-    } else if (bullet.x < 0){
-        bullet.x += width;
+    this.x += this.dx;
+    this.y += this.dy;
+    if (this.x > width) {
+        this.x -= width;
+    } else if (this.x < 0){
+        this.x += width;
     }
-    if (bullet.y > height) {
-        bullet.y -= height;
-    } else if (bullet.y < 0){
-        bullet.y += height;
+    if (this.y > height) {
+        this.y -= height;
+    } else if (this.y < 0){
+        this.y += height;
     }
-    for(let i = 0; i < rocks.length; i++) {
-        const r = rocks[i];
-        if (inside(bullet, r.coords)) {
+    for(const r of rocks) {
+        if (inside(this, r.coords)) {
             hitRock(r);
-            bullet.remove = true;
+            this.remove = true;
             break;
         }
     }
+    for(const e of enemies) {
+        if (inside(this, e.coords)) {
+            e.remove = true;
+            explosion(e.x, e.y, 50);
+            this.remove = true;
+            break;
+        }
+    }
+
 }
+
+function moveEnemyBullet() {
+    this.life--;
+    if (this.life <= 0) {
+        this.remove = true;
+        return;
+    }
+    const {width, height} = global;
+    this.x += this.dx;
+    this.y += this.dy;
+    if (this.x > width) {
+        this.x -= width;
+    } else if (this.x < 0){
+        this.x += width;
+    }
+    if (this.y > height) {
+        this.y -= height;
+    } else if (this.y < 0){
+        this.y += height;
+    }
+    if (inside(this, ship.coords)) {
+        hitShip()
+    }
+}
+
 
 function inside(bullet, coords) {
     if (coords == null) return;
@@ -445,7 +542,7 @@ function inside(bullet, coords) {
 function moveBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const bullet = bullets[i];
-        moveBullet(bullet);
+        bullet.move();
         if (bullet.remove) {
             bullets.splice(i, 1);
         }
@@ -491,13 +588,7 @@ function moveRock(rock) {
     } else if (rock.y < 0){
         rock.y += height;
     }
-    // need to convert to cartesian
-    rock.coords = rock.points.map(({r, theta}) => {
-        theta += rock.angle
-        const x = rock.x + cos(theta) * r;
-        const y = rock.y - sin(theta) * r;
-        return {x, y};
-    });
+    rock.coords = polarToCartesian(rock.x, rock.y, rock.angle, rock.points);
 }
 
 function moveRocks() {
@@ -566,18 +657,17 @@ function drawShip(ctx) {
            y,
            angle,
            thrust} = ship;
-    const radius = 30;
-    const noseX = x + cos(angle) * radius;
-    const noseY = y - sin(angle) * radius;
-    const bX = x + cos(angle + 135) * radius;
-    const bY = y - sin(angle + 135) * radius;
-    const cX = x + cos(angle + 225) * radius;
-    const cY = y - sin(angle + 225) * radius;
+
     ctx.beginPath();
-    ctx.moveTo(noseX, noseY);
-    ctx.lineTo(bX, bY);
-    ctx.lineTo(cX, cY);
+    const coords = ship.coords;
+    ctx.moveTo(coords[0].x, coords[0].y);
+    ctx.lineTo(coords[1].x, coords[1].y);
+    ctx.lineTo(coords[2].x, coords[2].y);
     ctx.fillStyle = "#77aaff";
+    if (ship.invulnerability) {
+        const hue = ship.invulnerability * 3.6;
+        ctx.fillStyle=`hsl(${hue},100%,50%)`;
+    }
     ctx.fill();
 }
 
@@ -612,6 +702,22 @@ function drawForeground(ctx) {
     ctx.fillText("ZZZZZZZZZZ".substring(0, global.smartBombs), global.width - 200, 60);
 }
 
+function enemyShoot(enemy) {
+    const ox =  cos(enemy.angle) * 6;
+    const oy =  -sin(enemy.angle) * 6;
+    const bullet = {
+        ox: ox,
+        oy: oy,
+        x: enemy.x + ox,
+        y: enemy.y + oy,
+        dx: enemy.dx + ox,
+        dy: enemy.dy + oy,
+        life: 90,
+        move: moveEnemyBullet
+    }
+    bullets.push(bullet);
+}
+
 function main() {
     const t0 = performance.now();
     const {canvas, bufferCanvas, width, height, screenWidth, screenHeight} = global;
@@ -620,16 +726,21 @@ function main() {
     moveShip();
     moveBullets();
     moveRocks();
+    moveEnemies();
     moveParticles();
     moveMessages(ctx);
     drawBackground(ctx);
     drawBullets(ctx);
     drawParticles(ctx);
-    drawShip(ctx);
     drawRocks(ctx);
+    drawShip(ctx);
     drawEnemies(ctx);
     drawMessages(ctx);
     drawForeground(ctx);
+    if (global.timeTillNextEnemy-- <= 0) {
+        global.timeTillNextEnemy = global.enemyFrequency;
+        addEnemy();
+    }
     //render the buffered canvas onto the original canvas element
     canvas.getContext('2d').drawImage(bufferCanvas, 0, 0, screenWidth, screenHeight);
     const t1 = performance.now();
@@ -654,7 +765,8 @@ function smartBomb() {
             y: ship.y + oy,
             dx: ship.dx + ox,
             dy: ship.dy + oy,
-            life: 255 // bullet lasts 90 frames
+            life: 255,
+            move: moveBullet
         }
         bullets.push(bullet);
     }
@@ -674,13 +786,13 @@ function shoot() {
         y: ship.y + oy,
         dx: ship.dx + ox,
         dy: ship.dy + oy,
-        life: 90 // bullet lasts 90 frames
+        life: 90,
+        move: moveBullet
     }
     bullets.push(bullet);
 }
 
 function keyDown(e) {
-    console.log(e.keyCode);
     switch (e.keyCode) {
     case 37: // left
         ship.dAngle = 6; break;
@@ -710,8 +822,10 @@ function keyUp(e) {
 
 function nextLevel() {
     global.level++;
+    global.timeTillNextEnemy = global.enemyFrequency;
     global.smartBombs++;
     bullets.splice(0);
+    enemies.splice(0);
     global.smallestRock = Math.max(100 - global.level * 10, 50);
         messages.push({
         text: "Level "+global.level,
@@ -724,7 +838,6 @@ function nextLevel() {
     for(let i = 0; i< Math.min(global.level, 5); i++){
         addRock(100 * global.level, 0, 0);
     }
-    addEnemy(500, 500);
     while(shipCollision()) {
         ship.x = Math.random() * global.width;
         ship.y = Math.random() * global.height;
