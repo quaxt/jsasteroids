@@ -1,3 +1,7 @@
-* TODO make the enemy able to defeat the spinning trick
+
 * TODO convert to webgl
 * TODO stop the rocks from getting too big in later levels
+* TODO add sound
+* DONE make the enemy able to defeat the spinning trick
+  The spinning trick is when you just keep spinning in one direction
+  while holding down the fire button.

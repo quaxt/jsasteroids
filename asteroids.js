@@ -1,3 +1,9 @@
+function predict(ship) {
+    const r = 50;
+    return {x: ship.x +  ship.dx * r,
+            y: ship.y +  ship.dy * r};
+}
+
 const global = {
     screenWidth: 100,
     screenHeight: 100,
@@ -5,9 +11,7 @@ const global = {
     width: 1920,
     height: 1080,
     ships: 5,
-    level: 1,
     smartBombs: 0,
-    enemyFrequency: 60,
     maxEnemies: 50
 };
 
@@ -15,6 +19,7 @@ function initAsteroids() {
     global.smallestRock = 100;
     ship.x = global.width / 2;
     ship.y = global.height / 2;
+    ship.score = 0;
     document.addEventListener('keydown', keyDown);
     document.addEventListener('keyup', keyUp);
     global.canvas = document.getElementById('canvas');
@@ -37,7 +42,17 @@ const ship = {
     maxSpeed: 10,
     shoot: false,
     shootWait: 0,
-    invulnerability: 0
+    invulnerability: 0,
+    updateCoords: function() {
+        const radius = 30;
+        const {x, y, angle} = ship;
+        this.coords = [
+        {x: x + cos(angle) * radius, y: y - sin(angle) * radius},
+        {x: x + cos(angle + 135) * radius, y: y - sin(angle + 135) * radius},
+        {x: x + cos(angle + 225) * radius, y: y - sin(angle + 225) * radius},
+    ];
+
+    }
 };
 const bullets = [];
 const rocks = [];
@@ -78,8 +93,12 @@ function addEnemy() {
     const h = Math.random() * 360;
     const fillStyle =  `hsl(${h},100%,50%)`;
     const maxSpeed = 2;
-    const enemy = {points, x, y, dAngle, angle: 0, dx, dy, fillStyle, maxSpeed};
-    moveEnemy(enemy);
+    const enemy = {points, x, y, dAngle, angle: 0, dx, dy, fillStyle, maxSpeed,
+                   updateCoords:  function() {
+                       this.coords = polarToCartesian(this.x, this.y, this.angle, this.points);
+                   }
+                  };
+    moveShip(enemy);
     enemies.push(enemy);
 }
 
@@ -88,46 +107,6 @@ function polarToCartesian(x, y, angle, points) {
         theta += angle
         return {x: x + cos(theta) * r, y: y - sin(theta) * r};
     });
-}
-
-function moveEnemy(enemy) {
-    const {width, height} = global;
-    enemy.angle += enemy.dAngle;
-        if (enemy.angle < 0) {
-        enemy.angle += 360;
-    } else if (enemy.angle > 360) {
-        enemy.angle -= 360;
-    }
-
-    enemy.x += enemy.dx;
-    enemy.y += enemy.dy;
-    if (enemy.x > width) {
-        enemy.x -= width;
-    } else if (enemy.x < 0){
-        enemy.x += width;
-    }
-    if (enemy.y > height) {
-        enemy.y -= height;
-    } else if (enemy.y < 0){
-        enemy.y += height;
-    }
-    if (!ship.remove && Math.random()<0.05) {
-        enemyShoot(enemy);
-    }
-
-    const newdx = enemy.dx + cos(enemy.angle) * 0.50;
-    const newdy = enemy.dy - sin(enemy.angle) * 0.50;
-
-    if (speed(newdx, newdy) <= enemy.maxSpeed) {
-        enemy.dx = newdx;
-        enemy.dy = newdy;
-    }
-
-    enemy.x += enemy.dx;
-    enemy.y += enemy.dy;
-
-    enemy.coords = polarToCartesian(enemy.x, enemy.y, enemy.angle, enemy.points);
-    controlEnemy(enemy);
 }
 
 function diff(a, b) {
@@ -140,8 +119,13 @@ function controlEnemy(enemy) {
     if (!ship.remove) {
         const cx = enemy.x;
         const cy = enemy.y;
-        const x = ship.x -cx;
-        const y = cy - ship.y;
+        // instead of targeting ship.x, ship.y target where ship will be
+        const p = predict(ship);
+
+        const shipX = p.x;
+        const shipY = p.y;
+        const x = shipX -cx;
+        const y = cy - shipY;
         const r = Math.sqrt(x * x + y * y);
         let theta = Math.atan2(y, x)*180/Math.PI;
         /// theta is where we want to point
@@ -161,18 +145,26 @@ function controlEnemy(enemy) {
                 theta+=360;
             }
         }
+        const d = diff(theta, angle);
+        enemy.thrust = (d < 6);
+        if (d < 0.5) {
+            enemyShoot(enemy);
+        }
         enemy.dAngle = (!ship.remove) ? Math.sign(theta - angle) * 6 : 0
     } else {
         enemy.dAngle = 0;
+        enemy.thrust = false;
     }
 }
 
 function moveEnemies() {
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
-        moveEnemy(enemy);
+        moveShip(enemy);
         if (enemy.remove) {
             enemies.splice(i, 1);
+        } else {
+            controlEnemy(enemy);
         }
     }
 }
@@ -305,7 +297,7 @@ function shipCollision() {
         return false;
     }
     for (const r of rocks) {
-        if (inside(ship, r.coords)) {
+        if (inside(ship, r.coords, r.oxs, r.oys)) {
             return true;
         }
     }
@@ -367,7 +359,7 @@ function sin(angle) {
     return Math.sin(angle * degToRad);
 }
 
-function addThrustParticle() {
+function addThrustParticle(ship) {
     const thrustAngle = 180 + ship.angle + (Math.random()-0.5) * 15;
     const ox =  cos(thrustAngle) * 5
     const oy = -sin(thrustAngle) * 5;
@@ -403,7 +395,7 @@ function explosion(x, y, size) {
     }
 }
 
-function moveShip() {
+function moveShip(ship) {
     if (ship.remove) {
         return;
     }
@@ -411,10 +403,7 @@ function moveShip() {
         ship.invulnerability--;
     }
     const {width, height} = global;
-    if (shipCollision()) {
-            hitShip();
-        return;
-    }
+
     ship.angle += ship.dAngle;
     if (ship.angle < 0) {
         ship.angle += 360;
@@ -424,7 +413,7 @@ function moveShip() {
     if (ship.thrust) {
         const newdx = ship.dx + cos(ship.angle) * 0.25;
         const newdy = ship.dy - sin(ship.angle) * 0.25;
-        addThrustParticle();
+        addThrustParticle(ship);
         if (speed(newdx, newdy) <= ship.maxSpeed) {
             ship.dx = newdx;
             ship.dy = newdy;
@@ -442,16 +431,11 @@ function moveShip() {
     } else if (ship.y < 0){
         ship.y += height;
     }
-    const radius = 30;
-    const {x, y, angle} = ship;
-    ship.coords = [
-        {x: x + cos(angle) * radius, y: y - sin(angle) * radius},
-        {x: x + cos(angle + 135) * radius, y: y - sin(angle + 135) * radius},
-        {x: x + cos(angle + 225) * radius, y: y - sin(angle + 225) * radius},
-    ];
+    ship.updateCoords();
 }
 
 function hitRock(rock) {
+    ship.score += Math.max(1000, 7000- rock.size*10);
     rock.remove = true;
     explosion(rock.x, rock.y, rock.size/10);
     const newRockSize = rock.size / 2;
@@ -481,7 +465,7 @@ function moveBullet() {
         this.y += height;
     }
     for(const r of rocks) {
-        if (inside(this, r.coords)) {
+        if (inside(this, r.coords, r.oxs, r.oys)) {
             hitRock(r);
             this.remove = true;
             break;
@@ -489,6 +473,7 @@ function moveBullet() {
     }
     for(const e of enemies) {
         if (inside(this, e.coords)) {
+            ship.score += 10000;
             e.remove = true;
             explosion(e.x, e.y, 50);
             this.remove = true;
@@ -523,21 +508,27 @@ function moveEnemyBullet() {
 }
 
 
-function inside(bullet, coords) {
+function inside(bullet, coords, oxs = [0], oys = [0]) {
     if (coords == null) return;
     // ray-casting algorithm based on
     // https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html/pnpoly.html
     const {x, y} = bullet;
     let inside = false;
-    for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
-        let xi = coords[i].x, yi = coords[i].y;
-        let xj = coords[j].x, yj = coords[j].y;
+
+    for (let ox of oxs) {
+        for (let oy of oys) {
+            for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
+        let xi = coords[i].x+ox, yi = coords[i].y+oy;
+        let xj = coords[j].x+ox, yj = coords[j].y+oy;
         let intersect = ((yi > y) != (yj > y))
             && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
         if (intersect) inside = !inside;
     }
-    return inside;
-};
+        }
+        if(inside) return true;
+    }
+   return inside;
+}
 
 function moveBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
@@ -588,7 +579,30 @@ function moveRock(rock) {
     } else if (rock.y < 0){
         rock.y += height;
     }
-    rock.coords = polarToCartesian(rock.x, rock.y, rock.angle, rock.points);
+    const coords = polarToCartesian(rock.x, rock.y, rock.angle, rock.points);
+
+
+    let repeatRight = false;
+    let repeatLeft = false;
+    let repeatBottom = false;
+    let repeatTop = false;
+    for (let i = 0; i < coords.length; i++) {
+        let {x, y} = coords[i];
+        if (x < 0) repeatRight = true;
+        else if (x > width) repeatLeft = true;
+        if (y < 0) repeatBottom = true;
+        else if (y> height) repeatTop = true;
+    }
+    const oxs = [0];
+    const oys = [0];
+    if (repeatRight) oxs.push(width);
+    if (repeatLeft) oxs.push(-width);
+    if (repeatTop) oys.push(-height);
+    if (repeatBottom) oys.push(height);
+    rock.oxs = oxs;
+    rock.oys = oys;
+    rock.coords = coords;
+
 }
 
 function moveRocks() {
@@ -613,24 +627,8 @@ function drawRocks(ctx) {
 function drawRock(rock, ctx) {
     // rock is a bunch of polar coordinates
     const {width, height} = global;
-    const {coords, angle, fillStyle} = rock;
-    let repeatRight = false;
-    let repeatLeft = false;
-    let repeatBottom = false;
-    let repeatTop = false;
-    for (let i = 0; i < coords.length; i++) {
-        let {x, y} = coords[i];
-        if (x < 0) repeatRight = true;
-        else if (x > width) repeatLeft = true;
-        if (y < 0) repeatBottom = true;
-        else if (y> height) repeatTop = true;
-    }
-    const oxs = [0];
-    const oys = [0];
-    if (repeatRight) oxs.push(width);
-    if (repeatLeft) oxs.push(-width);
-    if (repeatTop) oys.push(-height);
-    if (repeatBottom) oys.push(height);
+    const {coords, angle, fillStyle, oxs, oys} = rock;
+
     for (let ox of oxs) {
         for (let oy of oys) {
             ctx.beginPath();
@@ -695,10 +693,11 @@ function drawBackground(ctx) {
 
 function drawForeground(ctx) {
     ctx.fillStyle = "#ffffff";
-    ctx.font = '10px serif';
-    ctx.fillText(global.frameTime, 10, 30);
+//    ctx.font = '10px serif';
+//    ctx.fillText(global.frameTime, 10, 30);
     ctx.font = '50px serif';
-    ctx.fillText(global.ships, global.width - 500, 60);
+    const info = "SHIPS " + global.ships + "   LEVEL " + global.level + "   SCORE " + ship.score;
+    ctx.fillText(info, 100, 60);
     ctx.fillText("ZZZZZZZZZZ".substring(0, global.smartBombs), global.width - 200, 60);
 }
 
@@ -723,7 +722,10 @@ function main() {
     const {canvas, bufferCanvas, width, height, screenWidth, screenHeight} = global;
     const ctx = bufferCanvas.getContext('2d');
     shoot();
-    moveShip();
+    moveShip(ship);
+    if (shipCollision()) {
+            hitShip();
+    }
     moveBullets();
     moveRocks();
     moveEnemies();
@@ -822,21 +824,23 @@ function keyUp(e) {
 
 function nextLevel() {
     global.level++;
-    global.timeTillNextEnemy = global.enemyFrequency;
     global.smartBombs++;
     bullets.splice(0);
     enemies.splice(0);
     global.smallestRock = Math.max(100 - global.level * 10, 50);
-        messages.push({
+    global.enemyFrequency = Math.max(600,3600 - global.level * 600);
+    global.timeTillNextEnemy = global.enemyFrequency;
+    messages.push({
         text: "Level "+global.level,
         x:500,
                   y:500,
                   dx:0,
                   dy:-1,
                   font: '100px serif',
-                  life: 100});
-    for(let i = 0; i< Math.min(global.level, 5); i++){
-        addRock(100 * global.level, 0, 0);
+        life: 100});
+    const size = Math.min(100 * global.level, 700);
+    for(let i = 0; i< global.level + 2; i++){
+        addRock(size, 0, 0);
     }
     while(shipCollision()) {
         ship.x = Math.random() * global.width;
