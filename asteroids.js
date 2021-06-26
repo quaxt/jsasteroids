@@ -7,8 +7,8 @@ const global = {
     ships: 5,
     level: 1,
     smartBombs: 0,
-    enemyFrequency: 360,
-    maxEnemies: 20
+    enemyFrequency: 60,
+    maxEnemies: 50
 };
 
 function initAsteroids() {
@@ -111,12 +111,12 @@ function moveEnemy(enemy) {
     } else if (enemy.y < 0){
         enemy.y += height;
     }
-    if (!ship.remove && Math.random()<0.01) {
+    if (!ship.remove && Math.random()<0.05) {
         enemyShoot(enemy);
     }
 
-    const newdx = enemy.dx + cos(enemy.angle) * 0.25;
-    const newdy = enemy.dy - sin(enemy.angle) * 0.25;
+    const newdx = enemy.dx + cos(enemy.angle) * 0.50;
+    const newdy = enemy.dy - sin(enemy.angle) * 0.50;
 
     if (speed(newdx, newdy) <= enemy.maxSpeed) {
         enemy.dx = newdx;
